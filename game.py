@@ -37,6 +37,7 @@ class Game:
         self.combo_timer = 0
         self.boss_spawned = False
         self.transition_timer = 0
+        self.hitstop_timer = 0
 
         self.leaderboard = Leaderboard()
 
@@ -126,6 +127,7 @@ class Game:
         self.boss_spawned = False
         self.score_multiplier = 1.0
         self.combo_timer = 0
+        self.hitstop_timer = 0
         self.state = "PLAYING"
 
         self.shop_prices = {
@@ -303,6 +305,12 @@ class Game:
         if self.state != "PLAYING" or self.paused:
             return
 
+        if self.hitstop_timer > 0:
+            self.hitstop_timer -= 1
+            effects.update()
+            floating_text.update()
+            return
+
         self.player.update(self.player_lasers)
         effects.update()
 
@@ -449,12 +457,14 @@ class Game:
                         break
 
                     e.hp -= l.damage
+                    e.flash_timer = 4
                     effects.spawn_explosion(l.x, l.y, [e.color, COLOR_WHITE], 8, (1, 4))
                     if l in self.player_lasers: self.player_lasers.remove(l)
 
                     if e.hp <= 0:
                         sfx.play('explosion')
                         effects.spawn_explosion(e.x, e.y, [e.color, COLOR_ORANGE, COLOR_WHITE], 22)
+                        self.hitstop_timer = 3
                         self.combo_timer = 150
                         earned_score = int(e.score_value * self.score_multiplier)
                         self.player.score += earned_score
@@ -482,12 +492,14 @@ class Game:
             for a in self.asteroids[:]:
                 if l.get_rect().colliderect(a.get_rect()):
                     a.hp -= l.damage
+                    a.flash_timer = 3
                     effects.spawn_explosion(l.x, l.y, [COLOR_GREY, COLOR_WHITE], 6)
                     if l in self.player_lasers: self.player_lasers.remove(l)
 
                     if a.hp <= 0:
                         sfx.play('explosion')
                         effects.spawn_explosion(a.x, a.y, [COLOR_GREY, COLOR_WHITE], 20)
+                        self.hitstop_timer = 2
                         self.player.score += 50
                         if random.random() < 0.60:
                             self.powerups.append(PowerUp(a.x, a.y, type_id=4))
@@ -515,11 +527,13 @@ class Game:
                         effects.spawn_explosion(l.x, l.y, [COLOR_CYAN, COLOR_BLUE], 12)
                     else:
                         self.boss.hp -= l.damage
+                        self.boss.flash_timer = 3
                         effects.spawn_explosion(l.x, l.y, [COLOR_RED, COLOR_WHITE], 10)
                         camera_shake.trigger(3, 4)
                         if self.boss.hp <= 0:
                             sfx.play('explosion')
                             effects.spawn_explosion(self.boss.x, self.boss.y, [COLOR_RED, COLOR_YELLOW, COLOR_WHITE], 70)
+                            self.hitstop_timer = 5
                             self.boss = None
                     break
 
@@ -674,6 +688,19 @@ class Game:
         if self.player.shield > 0:
             pct = self.player.shield / self.player.max_shield
             pygame.draw.rect(surface, COLOR_GREEN, (305, SCREEN_HEIGHT - 31, int(120 * pct), 12), border_radius=3)
+
+        dash_lbl = font.render("DASH", True, COLOR_WHITE)
+        surface.blit(dash_lbl, (445, SCREEN_HEIGHT - 35))
+        pygame.draw.rect(surface, COLOR_DARK_GREY, (497, SCREEN_HEIGHT - 31, 60, 12), border_radius=3)
+        dash_total = self.player.DASH_DURATION + self.player.DASH_COOLDOWN
+        dash_pct = max(0.0, 1.0 - self.player.dash_cooldown / dash_total)
+        if self.player.dash_timer > 0:
+            bar_color, fill_pct = COLOR_WHITE, 1.0
+        elif self.player.dash_cooldown <= 0:
+            bar_color, fill_pct = COLOR_CYAN, 1.0
+        else:
+            bar_color, fill_pct = COLOR_GREY, dash_pct
+        pygame.draw.rect(surface, bar_color, (497, SCREEN_HEIGHT - 31, int(60 * fill_pct), 12), border_radius=3)
 
         wpn_names = {1: "SINGLE L-1", 2: "DOUBLE L-2", 3: "BLAST STRIKE"}
         wpn_text = f"WEAPON: {wpn_names.get(self.player.weapon_level, 'MAX')}"
@@ -971,6 +998,7 @@ class Game:
             "  * MOVEMENT CONTROLS *",
             "  STEER CRAFT  : WASD / ARROW KEYS (2D Movement Enabled)",
             "  TRIGGER LASERS: SPACEBAR (HOLD)",
+            "  EMERGENCY DASH: SHIFT (RAPID BURST + BRIEF PHASING, 1s RECHARGE)",
             "  PAUSE MATRIX : ESCAPE / MENU OVERLAY",
             "",
             "  * EXTRA-TERRESTRIAL SALVAGE *",

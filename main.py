@@ -77,6 +77,10 @@ def main():
                 elif event.key == pygame.K_SPACE:
                     if game.state == "STAGE_CLEAR":
                         game.handle_stage_clear_keys()
+                elif event.key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
+                    if game.state == "PLAYING" and not game.paused:
+                        keys = pygame.key.get_pressed()
+                        game.player.try_dash(keys)
 
         if game.state == "PLAYING" and not game.paused:
             keys = pygame.key.get_pressed()

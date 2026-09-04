@@ -69,7 +69,8 @@ class SoundManager:
             'click': 'click.wav',
             'slot_tick': 'slot_tick.wav',
             'slot_win': 'slot_win.wav',
-            'slot_lose': 'slot_lose.wav'
+            'slot_lose': 'slot_lose.wav',
+            'dash': 'dash.wav'
         }
 
         for sfx_name, file_name in sfx_files.items():
@@ -211,6 +212,17 @@ class SoundManager:
                 val = math.sin(2 * math.pi * freq * t)
                 envelope = (num_samples - i) / num_samples
                 val_int = int(val * envelope * 14000)
+                buf.extend(struct.pack('<h', val_int))
+
+        elif name == 'dash':
+            dur = 0.12
+            num_samples = int(sample_rate * dur)
+            for i in range(num_samples):
+                t = i / sample_rate
+                freq = 1400 - (t / dur) * 1000
+                val = math.sin(2 * math.pi * freq * t)
+                envelope = (num_samples - i) / num_samples
+                val_int = int(val * envelope * 9000)
                 buf.extend(struct.pack('<h', val_int))
 
         if len(buf) > 0:

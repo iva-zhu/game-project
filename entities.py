@@ -132,6 +132,15 @@ class Player:
         self.weapon_upgrade_timer = 0
         self.drones = []
 
+        self.DASH_DURATION = 8
+        self.DASH_COOLDOWN = 48
+        self.DASH_SPEED = 15.0
+        self.dash_timer = 0
+        self.dash_cooldown = 0
+        self.dash_dx = 0.0
+        self.dash_dy = -1.0
+        self.afterimages = []
+
         self.sprite = None
         self.sprite_original = None
         self.load_sprite()
@@ -141,7 +150,42 @@ class Player:
         self.sprite = pygame.transform.scale(self.sprite_original, (self.width, self.height))
         self.sprite_rect = self.sprite.get_rect()
 
+    def try_dash(self, keys):
+        if self.dash_cooldown > 0 or self.dash_timer > 0:
+            return
+        dx = (keys[pygame.K_RIGHT] or keys[pygame.K_d]) - (keys[pygame.K_LEFT] or keys[pygame.K_a])
+        dy = (keys[pygame.K_DOWN] or keys[pygame.K_s]) - (keys[pygame.K_UP] or keys[pygame.K_w])
+        if dx == 0 and dy == 0:
+            dx, dy = 0, -1
+        norm = math.hypot(dx, dy)
+        self.dash_dx = dx / norm
+        self.dash_dy = dy / norm
+        self.dash_timer = self.DASH_DURATION
+        self.dash_cooldown = self.DASH_DURATION + self.DASH_COOLDOWN
+        sfx.play('dash')
+        camera_shake.trigger(3, 5)
+        floating_text.spawn(self.x, self.y - 30, "DASH!", COLOR_CYAN, 14)
+
+    def _clamp_position(self):
+        if self.x < self.width // 2:
+            self.x = self.width // 2
+        if self.x > SCREEN_WIDTH - self.width // 2:
+            self.x = SCREEN_WIDTH - self.width // 2
+        if self.y < SCREEN_HEIGHT // 2:
+            self.y = SCREEN_HEIGHT // 2
+        if self.y > SCREEN_HEIGHT - 60:
+            self.y = SCREEN_HEIGHT - 60
+
     def move(self, keys):
+        if self.dash_timer > 0:
+            self.dash_timer -= 1
+            self.x += self.dash_dx * self.DASH_SPEED
+            self.y += self.dash_dy * self.DASH_SPEED
+            self.tilt += (self.dash_dx * 3.6 - self.tilt) * 0.25
+            self.afterimages.append({'x': self.x, 'y': self.y, 'tilt': self.tilt, 'life': 14, 'max_life': 14})
+            self._clamp_position()
+            return
+
         dx = 0
         dy = 0
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
@@ -159,14 +203,7 @@ class Player:
         target_tilt = dx * 1.8
         self.tilt += (target_tilt - self.tilt) * 0.12
 
-        if self.x < self.width // 2:
-            self.x = self.width // 2
-        if self.x > SCREEN_WIDTH - self.width // 2:
-            self.x = SCREEN_WIDTH - self.width // 2
-        if self.y < SCREEN_HEIGHT // 2:
-            self.y = SCREEN_HEIGHT // 2
-        if self.y > SCREEN_HEIGHT - 60:
-            self.y = SCREEN_HEIGHT - 60
+        self._clamp_position()
 
     def add_wingman(self):
         if len(self.drones) == 0:
@@ -195,6 +232,9 @@ class Player:
                 lasers.append(Laser(self.x + 18, self.y - 5, 1.8, -12, color, damage=dmg))
 
     def damage(self, amt=1):
+        if self.dash_timer > 0:
+            floating_text.spawn(self.x, self.y + 25, "PHASED!", COLOR_CYAN, 12)
+            return False
         if self.invulnerable_timer > 0:
             return False
 
@@ -221,6 +261,12 @@ class Player:
     def update(self, lasers):
         if self.shoot_cooldown > 0:
             self.shoot_cooldown -= 1
+        if self.dash_cooldown > 0:
+            self.dash_cooldown -= 1
+        for img in self.afterimages[:]:
+            img['life'] -= 1
+            if img['life'] <= 0:
+                self.afterimages.remove(img)
         if self.invulnerable_timer > 0:
             self.invulnerable_timer -= 1
         if self.double_damage_timer > 0:
@@ -254,6 +300,14 @@ class Player:
             drone.update(self.x, self.y, lasers)
 
     def draw(self, surface):
+        for img in self.afterimages:
+            pct = img['life'] / img['max_life']
+            ghost = self.sprite.copy()
+            ghost.set_alpha(int(140 * pct))
+            ghost = pygame.transform.rotate(ghost, img['tilt'] * 0.5)
+            rect = ghost.get_rect(center=(int(img['x']), int(img['y'])))
+            surface.blit(ghost, rect)
+
         if self.invulnerable_timer > 0 and (self.invulnerable_timer // 6) % 2 == 0:
             return
 
@@ -316,6 +370,10 @@ class Enemy:
         self.sprite = pygame.image.load(sprite_path).convert_alpha()
         self.sprite = pygame.transform.scale(self.sprite, (self.width, self.height))
 
+        self.flash_timer = 0
+        self.sprite_flash = self.sprite.copy()
+        self.sprite_flash.fill((255, 255, 255), special_flags=pygame.BLEND_ADD)
+
     def init_bezier_path(self):
         self.p0 = (random.choice([-100, SCREEN_WIDTH + 100]), random.uniform(0, 300))
         self.p1 = (SCREEN_WIDTH // 2, random.uniform(100, 400))
@@ -356,6 +414,8 @@ class Enemy:
 
     def update(self, player_x, enemy_lasers, time_scale=1.0):
         self.anim_timer += 0.08 * time_scale
+        if self.flash_timer > 0:
+            self.flash_timer -= 1
         if self.game:
             self.game.unlock_entity(str(self.type_id))
 
@@ -428,14 +488,15 @@ class Enemy:
             lasers.append(Laser(self.x, self.y + 12, 0, 6, self.color, damage=1))
 
     def draw(self, surface):
+        sprite = self.sprite_flash if self.flash_timer > 0 else self.sprite
         if self.state == "grid":
             angle = math.sin(self.anim_timer) * 3
-            rotated = pygame.transform.rotate(self.sprite, angle)
+            rotated = pygame.transform.rotate(sprite, angle)
             rect = rotated.get_rect(center=(int(self.x), int(self.y)))
             surface.blit(rotated, rect)
         else:
-            rect = self.sprite.get_rect(center=(int(self.x), int(self.y)))
-            surface.blit(self.sprite, rect)
+            rect = sprite.get_rect(center=(int(self.x), int(self.y)))
+            surface.blit(sprite, rect)
 
         if self.shield > 0:
             pygame.draw.circle(surface, COLOR_CYAN, (int(self.x), int(self.y)), 22, 1)
@@ -514,12 +575,19 @@ class Asteroid:
         self.sprite = pygame.image.load(sprite_path).convert_alpha()
         self.sprite = pygame.transform.scale(self.sprite, (self.size * 2, self.size * 2))
 
+        self.flash_timer = 0
+        self.sprite_flash = self.sprite.copy()
+        self.sprite_flash.fill((255, 255, 255), special_flags=pygame.BLEND_ADD)
+
     def update(self, time_scale=1.0):
         self.y += self.speed * time_scale
         self.rotation_angle += self.rotation_speed * time_scale
+        if self.flash_timer > 0:
+            self.flash_timer -= 1
 
     def draw(self, surface):
-        rotated = pygame.transform.rotate(self.sprite, math.degrees(self.rotation_angle))
+        sprite = self.sprite_flash if self.flash_timer > 0 else self.sprite
+        rotated = pygame.transform.rotate(sprite, math.degrees(self.rotation_angle))
         rect = rotated.get_rect(center=(int(self.x), int(self.y)))
         surface.blit(rotated, rect)
 
@@ -602,6 +670,8 @@ class BaseBoss:
         self.shoot_cooldown = 0
         self.movement_timer = 0
         self.state = "entering"
+        self.flash_timer = 0
+        self.sprite_flash = None
 
         self.sprite = None
         self.sprite_path = sprite_path
@@ -612,14 +682,17 @@ class BaseBoss:
             try:
                 original = pygame.image.load(self.sprite_path).convert_alpha()
                 self.sprite = pygame.transform.scale(original, (self.width, self.height))
+                self.sprite_flash = self.sprite.copy()
+                self.sprite_flash.fill((255, 255, 255), special_flags=pygame.BLEND_ADD)
             except Exception as e:
                 print(f"Could not load boss sprite {self.sprite_path}: {e}")
                 self.sprite = None
 
     def draw(self, surface):
         if self.sprite:
-            rect = self.sprite.get_rect(center=(int(self.x), int(self.y)))
-            surface.blit(self.sprite, rect)
+            sprite = self.sprite_flash if self.flash_timer > 0 else self.sprite
+            rect = sprite.get_rect(center=(int(self.x), int(self.y)))
+            surface.blit(sprite, rect)
         else:
             self.draw_primitives(surface)
 
