@@ -457,6 +457,7 @@ class Game:
                 if l.get_rect().colliderect(e.get_rect()):
                     if e.shield > 0:
                         e.shield -= l.damage
+                        e.flash_timer = 4
                         effects.spawn_explosion(l.x, l.y, [COLOR_CYAN, COLOR_BLUE], 6)
                         if l in self.player_lasers: self.player_lasers.remove(l)
                         break
@@ -1003,7 +1004,7 @@ class Game:
             "  * MOVEMENT CONTROLS *",
             "  STEER CRAFT  : WASD / ARROW KEYS (2D Movement Enabled)",
             "  TRIGGER LASERS: SPACEBAR (HOLD)",
-            "  EMERGENCY DASH: SHIFT (RAPID BURST + BRIEF PHASING, 1s RECHARGE)",
+            "  EMERGENCY DASH: SHIFT (RAPID BURST + BRIEF PHASE, 1s RECHARGE)",
             "  PAUSE MATRIX : ESCAPE / MENU OVERLAY",
             "",
             "  * EXTRA-TERRESTRIAL SALVAGE *",
