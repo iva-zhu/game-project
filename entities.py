@@ -166,6 +166,11 @@ class Player:
         camera_shake.trigger(3, 5)
         floating_text.spawn(self.x, self.y - 30, "DASH!", COLOR_CYAN, 14)
 
+    def reset_dash(self):
+        self.dash_timer = 0
+        self.dash_cooldown = 0
+        self.afterimages.clear()
+
     def _clamp_position(self):
         if self.x < self.width // 2:
             self.x = self.width // 2
@@ -839,8 +844,9 @@ class BossVoidReaver(BaseBoss):
 
     def draw(self, surface):
         if self.sprite:
-            rect = self.sprite.get_rect(center=(int(self.x), int(self.y)))
-            surface.blit(self.sprite, rect)
+            sprite = self.sprite_flash if self.flash_timer > 0 else self.sprite
+            rect = sprite.get_rect(center=(int(self.x), int(self.y)))
+            surface.blit(sprite, rect)
         else:
             self.draw_primitives(surface)
 

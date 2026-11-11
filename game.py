@@ -144,6 +144,10 @@ class Game:
         self.mines.clear()
         self.boss = None
         self.boss_spawned = False
+        # transient state of the dash/hit-juice must not leak into the next stage
+        self.hitstop_timer = 0
+        if self.player:
+            self.player.reset_dash()
 
         cols = 8
         rows = 3
@@ -308,7 +312,6 @@ class Game:
         if self.hitstop_timer > 0:
             self.hitstop_timer -= 1
             effects.update()
-            floating_text.update()
             return
 
         self.player.update(self.player_lasers)
@@ -422,6 +425,8 @@ class Game:
 
         if self.boss:
             self.boss.update(self.player.x, self.enemy_lasers, self.enemies, time_scale)
+            if self.boss.flash_timer > 0:
+                self.boss.flash_timer -= 1
 
         self.check_collisions()
 
